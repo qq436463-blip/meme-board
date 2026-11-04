@@ -1,0 +1,111 @@
+<!doctype html>
+<html lang="zh-CN"><head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>BSC MEME 加分排行榜</title>
+<style>
+:root{--bg:#0d1117;--card:#161b22;--line:#30363d;--tx:#e6edf3;--mu:#8b949e;--g:#3fb950;--r:#f85149;--y:#d29922;--b:#58a6ff}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--tx);font:14px/1.5 -apple-system,"PingFang SC","Microsoft YaHei",sans-serif}
+header{padding:14px 16px;border-bottom:1px solid var(--line);display:flex;flex-wrap:wrap;gap:8px 16px;align-items:center}
+h1{font-size:18px;margin:0}.mu{color:var(--mu);font-size:12px}
+.bar{display:flex;flex-wrap:wrap;gap:8px 14px;align-items:center;padding:10px 16px}
+input[type=text],input[type=number]{background:var(--card);border:1px solid var(--line);color:var(--tx);padding:6px 10px;border-radius:6px;font-size:14px}
+input[type=number]{width:70px}label{color:var(--mu);font-size:13px;display:flex;align-items:center;gap:5px}
+.wrap{overflow-x:auto;padding:0 8px}
+table{border-collapse:collapse;width:100%;min-width:1100px}
+th,td{padding:7px 8px;border-bottom:1px solid var(--line);text-align:right;white-space:nowrap}
+th{position:sticky;top:0;background:var(--card);color:var(--mu);font-weight:600;cursor:pointer;user-select:none;font-size:12px;z-index:2}
+th:hover{color:var(--tx)}th.on{color:var(--b)}
+td.l,th.l{text-align:left}tr:hover td{background:#1c2230}
+.tot{font-weight:700;font-size:15px}.pos{color:var(--g)}.neg{color:var(--r)}.zero{color:#484f58}
+.tag{display:inline-block;padding:0 6px;border-radius:10px;font-size:11px;margin-left:4px;border:1px solid}
+.t-l{color:#ff7b72;border-color:#ff7b72}.t-p{color:var(--b);border-color:var(--b)}.t-r{color:var(--y);border-color:var(--y)}.t-a{color:var(--g);border-color:var(--g)}
+a{color:var(--b);text-decoration:none}a:hover{text-decoration:underline}
+button.cp{background:none;border:1px solid var(--line);color:var(--mu);border-radius:4px;cursor:pointer;font-size:11px;padding:0 5px;margin-left:4px}
+button.cp:hover{color:var(--tx)}
+.narr{max-width:260px;white-space:normal;text-align:left;font-size:12px;color:var(--mu)}
+.rf{max-width:200px;white-space:normal;text-align:left;font-size:12px;color:var(--y)}
+.rules{padding:16px}.rules h2{font-size:16px}.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:12px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:8px;padding:10px 14px}.card h3{margin:0 0 6px;font-size:14px}.card ul{margin:0;padding-left:18px;color:var(--mu);font-size:13px}
+footer{padding:16px;color:var(--mu);font-size:12px}
+@media(max-width:600px){h1{font-size:16px}}
+</style></head><body>
+<header><h1>BSC MEME 加分排行榜</h1><span class="mu" id="upd">加载中…</span><span class="mu" id="cnt"></span></header>
+<div class="bar">
+<input type="text" id="q" placeholder="搜索 名称 / 符号 / 合约">
+<label>最低总分 <input type="number" id="min" value="0"></label>
+<label><input type="checkbox" id="onlyp"> 只看推送过</label>
+<label>显示前 <input type="number" id="top" value="50"> 名</label>
+<label><input type="checkbox" id="onlyl"> 只看 🚀 动能启动</label>
+<span class="mu" id="shown"></span>
+</div>
+<div class="wrap"><table><thead><tr id="hd"></tr></thead><tbody id="tb"></tbody></table></div>
+<div class="rules"><h2>打分规则（来自当前配置）</h2><div class="grid" id="rules"></div></div>
+<footer>数据每分钟由本地脚本计算并发布，页面每 60 秒自动刷新。仅供参考，不构成投资建议；MEME 风险极高。</footer>
+<script>
+const COLS=[
+ ["rank","#",0,r=>r.rank],
+ ["name","币种",1,r=>r.symbol||""],
+ ["address","合约",1,r=>r.address],
+ ["total","总分",0,r=>r.total],
+ ["mcap","市值",0,r=>r.mcap],
+ ["sm","聪明钱",0,r=>r.sm],
+ ["kol","KOL",0,r=>r.kol],
+ ["fomo","FOMO",0,r=>r.fomo],
+ ["dexhot","Dex热门",0,r=>r.dexhot],
+ ["res","共振",0,r=>r.res],
+ ["mom","动量",0,r=>r.mom],
+ ["b15","15m买家",0,r=>r.b15],
+ ["b60","60m买家",0,r=>r.b60],
+ ["narr","叙事",0,r=>r.narr],
+ ["nnote","叙事说明",1,r=>r.narr_type||""],
+ ["risk","风控",1,r=>r.risk_flags.length],
+ ["pen","扣分",0,r=>r.pen],
+];
+let DATA=null,sortK="rank",sortD=1;
+const $=id=>document.getElementById(id);
+const esc=s=>String(s==null?"":s).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const fmtM=v=>v==null?"-":v>=1e9?(v/1e9).toFixed(2)+"B":v>=1e6?(v/1e6).toFixed(2)+"M":v>=1e3?(v/1e3).toFixed(1)+"K":String(v);
+const sc=v=>v==null?'<span class="zero">-</span>':v>0?`<span class="pos">+${v}</span>`:v<0?`<span class="neg">${v}</span>`:'<span class="zero">0</span>';
+$("hd").innerHTML=COLS.map(c=>`<th data-k="${c[0]}" class="${c[2]?'l':''}">${c[1]}<span class="ar"></span></th>`).join("");
+$("hd").onclick=e=>{const th=e.target.closest("th");if(!th)return;const k=th.dataset.k;if(sortK===k)sortD=-sortD;else{sortK=k;sortD=(k==="rank"||k==="name"||k==="address")?1:-1}render()};
+function render(){
+ if(!DATA)return;
+ const q=$("q").value.trim().toLowerCase(),mn=parseFloat($("min").value)||-1e9,op=$("onlyp").checked,ol=$("onlyl").checked,top=parseInt($("top").value)||50;
+ let rows=DATA.rows.filter(r=>r.rank<=top&&r.total>=mn&&(!op||r.pushed)&&(!ol||r.launch)&&(!q||(r.symbol+" "+r.name+" "+r.address).toLowerCase().includes(q)));
+ const col=COLS.find(c=>c[0]===sortK)||COLS[0],get=sortK==="nnote"?(r=>r.narr_type||""):col[3];
+ rows.sort((a,b)=>{let x=get(a),y=get(b);if(x==null)x=-1e18;if(y==null)y=-1e18;return (typeof x==="string"?x.localeCompare(y,"zh"):x-y)*sortD});
+ document.querySelectorAll("#hd th").forEach(t=>{const on=t.dataset.k===sortK;t.classList.toggle("on",on);t.querySelector(".ar").textContent=on?(sortD>0?" ▲":" ▼"):""});
+ $("tb").innerHTML=rows.map(r=>{
+  const nm=r.name&&r.name!==r.symbol?`<div class="mu">${esc(r.name)}</div>`:"";
+  const tags=(r.launch?'<span class="tag t-l">🚀 动能启动</span>':"")+(r.pushed?'<span class="tag t-p">已推送</span>':"")+(r.accel?'<span class="tag t-a">加速</span>':"");
+  const a=r.address,sh=a.slice(0,6)+"…"+a.slice(-4);
+  const rf=r.risk_flags.length?`<span class="rf">${r.risk_flags.map(esc).join("、")}</span>`:(r.risk_checked?'<span class="pos">✓</span>':'<span class="zero">未检</span>');
+  const kolT=r.kol_names&&r.kol_names.length?` title="${esc(r.kol_names.join(", "))}"`:"";
+  const narr=r.narr?`${sc(r.narr)}`:'<span class="zero">-</span>';
+  return `<tr><td>${r.rank}</td><td class="l"><b>${esc(r.symbol)}</b>${tags}${nm}</td>
+  <td class="l"><a href="https://dexscreener.com/bsc/${esc(a)}" target="_blank" rel="noopener">${sh}</a><button class="cp" data-a="${esc(a)}">复制</button></td>
+  <td class="tot">${r.total}</td><td>${fmtM(r.mcap)}</td>
+  <td title="${r.sm_wallets} 个钱包">${sc(r.sm)}<span class="mu"> (${r.sm_wallets}个)</span></td>
+  <td${kolT}>${sc(r.kol)}</td><td>${sc(r.fomo)}${r.fomo_rank?`<span class="mu"> #${r.fomo_rank}</span>`:""}</td><td>${sc(r.dexhot||0)}</td>
+  <td>${sc(r.res)}</td><td>${r.mom_avail?sc(r.mom):'<span class="zero">无数据</span>'}</td>
+  <td>${r.b15==null?'<span class="zero">-</span>':r.b15}</td><td>${r.b60==null?'<span class="zero">-</span>':r.b60}</td>
+  <td>${narr}</td><td class="narr" title="${esc(r.narr_note||"")}">${r.narr_type?`<b>${esc(r.narr_type)}</b> `:""}${esc(r.narr_note||"")}</td>
+  <td>${rf}</td><td>${sc(r.pen)}</td></tr>`}).join("");
+ $("shown").textContent=`显示 ${rows.length} / ${DATA.rows.length}`;
+}
+$("tb").onclick=e=>{const b=e.target.closest("button.cp");if(!b)return;const a=b.dataset.a;
+ const done=()=>{b.textContent="已复制";setTimeout(()=>b.textContent="复制",1200)};
+ if(navigator.clipboard&&window.isSecureContext)navigator.clipboard.writeText(a).then(done,()=>fb(a,done));else fb(a,done)};
+function fb(a,done){const t=document.createElement("textarea");t.value=a;document.body.appendChild(t);t.select();try{document.execCommand("copy")}catch(e){}t.remove();done()}
+["q","min","onlyp","onlyl","top"].forEach(i=>$(i).addEventListener("input",render));
+function rules(){ $("rules").innerHTML=DATA.rules.map(s=>`<div class="card"><h3>${esc(s.title)}</h3><ul>${s.items.map(i=>`<li>${esc(i)}</li>`).join("")}</ul></div>`).join("")}
+async function load(){
+ try{const r=await fetch("data.json?_="+Date.now(),{cache:"no-store"});DATA=await r.json();
+  $("upd").textContent="更新于 "+(DATA.generated_at||"-").replace(" (UTC+8)","")+"（上海时间）";
+  const c=DATA.counts||{};$("cnt").textContent=`共评分 ${c.tokens_scored||"-"} 个币 · 推送门槛 ${DATA.alert_threshold} 分`;
+  rules();render();
+ }catch(e){$("upd").textContent="加载失败，稍后自动重试"}
+}
+load();setInterval(load,60000);
+</script></body></html>
